@@ -12,7 +12,6 @@ func handler(queue chan *PipeData)  {
 		data.next <- data.handler(data.value)
 	}
 }
-
 go func() {
 	time.Sleep(1e9)
 	timeout <- true
