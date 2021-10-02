@@ -7,8 +7,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 )
 const (UPLOAD_DIR = "./uploads")
+const (TEMPLATE_DIR = "./views")
+
+var templates = make(map[string] *template.Template)
+
 // 上传文件
 func uploadHandler(w http.ResponseWriter, r *http.Request)  {
 	if r.Method == "GET"{
@@ -19,17 +24,11 @@ func uploadHandler(w http.ResponseWriter, r *http.Request)  {
 	}
 	if r.Method == "POST"{
 		f,h,err := r.FormFile("image")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		check(err)
 		filename :=h.Filename
 		defer f.Close()
 		t, err :=os.Create(UPLOAD_DIR+"/"+filename)
-		if err != nil {
-			http.Error(w,err.Error(),http.StatusInternalServerError)
-			return
-		}
+		check(err)
 		defer t.Close()
 		if _,err :=io.Copy(t,f); err != nil {
 			http.Error(w,err.Error(),http.StatusInternalServerError)
@@ -62,10 +61,7 @@ func isExists(path string)bool  {
 
 func  listHandler(w http.ResponseWriter, r *http.Request)  {
 	fileInfoArr, err:=ioutil.ReadDir(UPLOAD_DIR)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	check(err)
 	locals := make(map[string]interface{})
 	images :=[] string {}
 
@@ -77,14 +73,32 @@ func  listHandler(w http.ResponseWriter, r *http.Request)  {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
-func rendHtml(w http.ResponseWriter,tmpl string, locals map[string]interface{}) error {
-	t,err:= template.ParseFiles(tmpl + ".html")
-	if err != nil {
-		return err
-	}
-	err = t.Execute(w,locals)
+func rendHtml(w http.ResponseWriter,tmpl string, locals map[string]interface{})  error {
+	err := templates[tmpl].Execute(w,locals)
 	return err
-}  
+} 
+func check(err error)  {
+	if err != nil {
+		panic(err)
+	}
+} 
+func init()  {
+	fileInfoArr, err := ioutil.ReadDir(TEMPLATE_DIR)
+	check(err)
+	var templateName,templatePath string
+
+	for _,fileInfo :=range fileInfoArr{
+		templateName = fileInfo.Name()
+		ext := path.Ext(templateName)
+		if ext != ".html" {
+			continue
+		}
+		templatePath = TEMPLATE_DIR+"/"+templateName
+		log.Println("Loading template:", templatePath)
+		t := template.Must(template.ParseFiles(templatePath))
+		templates[templateName[0:len(templateName)-len(ext)]] = t
+	}
+}
 func main() {
 	http.HandleFunc("/", listHandler)
 	http.HandleFunc("/upload", uploadHandler)
