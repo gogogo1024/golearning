@@ -10,9 +10,11 @@ import (
 	"path"
 	"runtime/debug"
 )
-const (UPLOAD_DIR = "./uploads")
-const (TEMPLATE_DIR = "./views")
-
+const (
+	UPLOAD_DIR = "./uploads"
+	TEMPLATE_DIR = "./views" 
+	LIST_DIR = 0x0001
+)
 var templates = make(map[string] *template.Template)
 
 // 上传文件
@@ -24,17 +26,16 @@ func uploadHandler(w http.ResponseWriter, r *http.Request)  {
 		}
 	}
 	if r.Method == "POST"{
-		f,h,err := r.FormFile("image")
-		check(err)
+		f,h,err1 := r.FormFile("image")
+		check(err1)
 		filename :=h.Filename
 		defer f.Close()
-		t, err :=os.Create(UPLOAD_DIR+"/"+filename)
-		check(err)
+		t, err2 :=os.Create(UPLOAD_DIR+"/"+filename)
+		check(err2)
 		defer t.Close()
-		if _,err :=io.Copy(t,f); err != nil {
-			http.Error(w,err.Error(),http.StatusInternalServerError)
-			return
-		}
+		_, err3 :=io.Copy(t,f) 
+		check(err3)
+		http.Error(w,err3.Error(),http.StatusInternalServerError)
 		http.Redirect(w,r,"/view?id="+filename,http.StatusFound)
 	}
 }
@@ -49,9 +50,9 @@ func viewHandler(w http.ResponseWriter,r *http.Request)  {
 	}
 	w.Header().Set("Content-type","image")
 	http.ServeFile(w,r,imagePath)
-
 }
 
+//判定文件存在
 func isExists(path string)bool  {
 	_, err:=os.Stat(path)
 	if err != nil {
@@ -88,12 +89,26 @@ func safeHandler(fn http.HandlerFunc) http.HandlerFunc  {
 		defer func(){
 			if err,ok:=recover().(error); ok {
 				http.Error(w,err.Error(),http.StatusInternalServerError)
-				log.Println("WARN: panic in %v - %v",fn,err)
+				log.Println("WARN: panic in %v. - %v",fn,err)
 				log.Println(string(debug.Stack()))
 		}
 	}()
 	fn(w,r)
 	}
+}
+
+func staticDirHandler(mux *http.ServeMux,prefix string, staticDir string, flags int)  {
+	mux.HandleFunc(prefix,func(w http.ResponseWriter, r *http.Request){
+		file := staticDir + r.URL.Path[len(prefix)-1:]
+		if (flags & LIST_DIR) ==0 {
+			if exists :=isExists(file); !exists {
+				http.NotFound(w,r)
+				return
+			}
+		}
+		http.ServeFile(w,r,file)
+
+	})
 }
 func init()  {
 	fileInfoArr, err := ioutil.ReadDir(TEMPLATE_DIR)
@@ -113,11 +128,16 @@ func init()  {
 	}
 }
 func main() {
-	http.HandleFunc("/", safeHandler(listHandler))
-	http.HandleFunc("/upload", safeHandler(uploadHandler))
-	http.HandleFunc("/view", safeHandler(viewHandler))
+	mux :=http.NewServeMux()
+	staticDirHandler(mux,"/assets","./public",0)
+	
+	// mux.HandleFunc("/", safeHandler(listHandler))
+	mux.HandleFunc("/", listHandler)
 
-	err := http.ListenAndServe(":8080", nil)
+	mux.HandleFunc("/upload", safeHandler(uploadHandler))
+	mux.HandleFunc("/view", safeHandler(viewHandler))
+
+	err := http.ListenAndServe(":8080", mux)
 	if err != nil {
 		log.Fatal("ListenAndServe: ",err.Error())
 	}
