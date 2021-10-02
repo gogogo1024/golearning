@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"runtime/debug"
 )
 const (UPLOAD_DIR = "./uploads")
 const (TEMPLATE_DIR = "./views")
@@ -82,6 +83,18 @@ func check(err error)  {
 		panic(err)
 	}
 } 
+func safeHandler(fn http.HandlerFunc) http.HandlerFunc  {
+	return func(w http.ResponseWriter,r *http.Request){
+		defer func(){
+			if err,ok:=recover().(error); ok {
+				http.Error(w,err.Error(),http.StatusInternalServerError)
+				log.Println("WARN: panic in %v - %v",fn,err)
+				log.Println(string(debug.Stack()))
+		}
+	}()
+	fn(w,r)
+	}
+}
 func init()  {
 	fileInfoArr, err := ioutil.ReadDir(TEMPLATE_DIR)
 	check(err)
@@ -100,9 +113,9 @@ func init()  {
 	}
 }
 func main() {
-	http.HandleFunc("/", listHandler)
-	http.HandleFunc("/upload", uploadHandler)
-	http.HandleFunc("/view", viewHandler)
+	http.HandleFunc("/", safeHandler(listHandler))
+	http.HandleFunc("/upload", safeHandler(uploadHandler))
+	http.HandleFunc("/view", safeHandler(viewHandler))
 
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
